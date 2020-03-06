@@ -1,5 +1,7 @@
 # A1 PubSub
 
+[![Build Status](https://travis-ci.com/Setter/a1pubsub.svg?branch=master)](https://travis-ci.com/Setter/a1pubsub)
+
 > Keep your pubsub saucy
 
 This package is a wrapper for guaranteeing exactly-once handling of messages from [Google Cloud PubSub](https://cloud.google.com/pubsub/docs/).
