@@ -1,0 +1,14 @@
+.babelrc
+.gitignore
+.eslintrc.js
+.prettierrc.js
+.travis.yml
+
+docs/
+src/
+node_modules/
+tsconfig.json
+
+tests/
+jest.config.js
+
