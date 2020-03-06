@@ -1,5 +1,5 @@
 {
-  "name": "pubsub",
+  "name": "a1pubsub",
   "version": "0.0.1",
   "description": "GCP PubSub wrapper to add idempotency",
   "main": "index.js",
@@ -11,7 +11,7 @@
     "clean": "rm -rf ./dist",
     "build": "npm run clean && tsc"
   },
-  "author": "Giorgio Delgado",
+  "author": "Setter Inc.",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/pubsub": "^1.5.0"
