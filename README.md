@@ -16,6 +16,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
     - [Decoding Table](#decoding-table)
 * [Full Example of Subscription Handling With ExpressJS](#full-example-of-subscription-handling-with-expressjs)
 * [Security & Authentication](#security--authentication)
+* [Providing Alternative State Managers](#providing-alternative-state-managers)
 * [API Documentation](#api-documentation)
 
 
@@ -26,10 +27,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 > npm install a1pubsub
 ```
 
-This package requries running in a environment with GCP Application Default Credentials
-
-... or maybe provide a service account json from which to authenticate to? Future state
-
+This package requries running in a environment with GCP Application Default Credentials. If you authenticate on your machine using the `gcloud` cli, then you're good to go!
 
 ## Overview (Why & How)
 
@@ -245,6 +243,18 @@ app.listen(port, () => console.log(`Example app listening on port ${port}!`))
 
 Note that by default, your pubsub events are not authenticated. Please ensure that you authenticate events. More info: https://cloud.google.com/pubsub/docs/authentication
 
+
+## Providing Alternative State Managers
+
+Out of the box, idempotency is implemented / managed via an in-memory hash map (using the js `Map`). But you can provide your own persistence mechanism so long as it implements the `StateManager` interface ([link](https://priceless-meitner-38fa2b.netlify.com/interfaces/_index_.statemanager.html)).
+
+Example:
+
+```typescript
+import { PubSub } from 'a1pubsub'
+
+new PubSub('my-project-id', decodingTable, psqlStateManager)
+```
 
 ## API Documentation
 

@@ -35,7 +35,7 @@ export interface PubSubEvent {
   base64_event_data: Base64String
 }
 
-interface StateManager {
+export interface StateManager {
   getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined>
   recordMessageReceived(
     rawMessage: PubSubMessage,
