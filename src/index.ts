@@ -2,7 +2,6 @@ import { PubSub as GooglePubSub } from '@google-cloud/pubsub'
 import { JSON, base64ToParsedJSON } from './json'
 
 type Base64String = string
-type SubscriptionId = string
 type MessageId = string
 
 /**
@@ -28,7 +27,7 @@ export interface UnprocessedPubSubMessage {
  * A valid pubsub message has a recognized subscription name, and
  * the data conforms to a schema (and whose data came from JSON)
  */
-export interface PubSubMessage<S extends string, T extends JSON> {
+export interface PubSubMessage<S extends string, T> {
   subscription: S
   message: {
     messageId: MessageId
@@ -54,7 +53,7 @@ export interface PubSubEvent {
   last_run_at: Date
   created_at: Date
   status: EventStatus
-  subscription: SubscriptionId
+  subscription: string
   base64_event_data: Base64String
 }
 
@@ -62,7 +61,7 @@ export interface StateManager {
   getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined>
   recordMessageReceived(
     rawMessage: UnprocessedPubSubMessage,
-    subscription: SubscriptionId,
+    subscription: string,
     cachedEvent?: PubSubEvent,
   ): Promise<PubSubEvent>
   recordMessageProcessingOutcome(
@@ -94,7 +93,7 @@ export class InMemoryStateManager implements StateManager {
 
   async recordMessageReceived(
     rawMessage: UnprocessedPubSubMessage,
-    subscription: SubscriptionId,
+    subscription: string,
     cachedEvent?: PubSubEvent,
   ): Promise<PubSubEvent> {
     const today = new Date()
@@ -140,24 +139,26 @@ export class InMemoryStateManager implements StateManager {
 
 type Validator<T> = (json: JSON) => T | undefined
 
-interface SubscriptionHandler<T> {
+interface SubscriptionHandler<S extends string, T> {
   validator: Validator<T>
-  handler: (data: T) => Promise<boolean>
+  handler: (data: PubSubMessage<S, T>) => Promise<boolean>
 }
 
-export type DecodingTable<T> = Map<SubscriptionId, SubscriptionHandler<T>>
+export type DecodingTable<S extends string, T> = Map<S, SubscriptionHandler<S, T>>
 
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
 // convers projects/myproject/subscriptions/mysubscription into mysubscription
-export const getSubscription = (rawSubscription: string): SubscriptionId | null => {
+export const getSubscription = <S extends string>(
+  rawSubscription: string,
+): S | null => {
   const parsed = subscriptionRe.exec(rawSubscription)
 
   if (!parsed) {
     return null
   }
 
-  return parsed[1]
+  return parsed[1] as S
 }
 
 type Either<T, E> = { type: 'ok'; data: T } | { type: 'error'; error: E }
@@ -181,14 +182,14 @@ const handleValidator = <T>(
   }
 }
 
-export class PubSub<T> {
+export class PubSub<S extends string, T> {
   private projectId: string
   private stateManager: StateManager
-  private decoders: DecodingTable<T>
+  private decoders: DecodingTable<S, T>
 
   constructor(
     projectId: string,
-    decodingTable: DecodingTable<T>,
+    decodingTable: DecodingTable<S, T>,
     customStateManager?: StateManager,
   ) {
     this.projectId = projectId
@@ -214,7 +215,7 @@ export class PubSub<T> {
   async handlePubSubMessage(
     rawMsg: UnprocessedPubSubMessage,
   ): Promise<SubscriptionError | undefined> {
-    const subscription = getSubscription(rawMsg.subscription)
+    const subscription = getSubscription<S>(rawMsg.subscription)
 
     if (!subscription) {
       return SubscriptionError.InvalidSubscription
@@ -252,11 +253,18 @@ export class PubSub<T> {
       return decodedMessage.error
     }
 
-    const succeeded = await handler(decodedMessage.data).catch(() => {
+    const pubSubMessage: PubSubMessage<S, T> = {
+      subscription,
+      message: {
+        messageId: rawMsg.message.messageId,
+        data: decodedMessage.data,
+      },
+    }
+
+    const succeeded = await handler(pubSubMessage).catch(() => {
       // catching in case handler didn't catch its own errors
       return false
     })
-
     if (succeeded) {
       this.stateManager.recordMessageProcessingOutcome(
         updatedCachedMessage,

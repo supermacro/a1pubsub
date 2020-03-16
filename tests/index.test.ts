@@ -22,11 +22,13 @@ jest.mock('@google-cloud/pubsub', () => ({
 import {
   PubSub,
   DecodingTable,
-  PubSubMessage,
+  UnprocessedPubSubMessage,
   InMemoryStateManager,
   EventStatus,
   SubscriptionError,
 } from '../src'
+
+import { JSON } from '../src/json'
 
 const sleepMs = (ms: number) =>
   new Promise(resolve => {
@@ -43,11 +45,14 @@ const getDate = (date?: Date): Date => {
   }
 }
 
-const base64Encode = <T extends {}>(obj: T): string => {
+const base64Encode = <T extends JSON>(obj: T): string => {
   return Buffer.from(JSON.stringify(obj)).toString('base64')
 }
 
-const generatePubSubMessage = <T extends {}>(subscription: string, data: T): PubSubMessage => ({
+const generatePubSubMessage = <T extends JSON>(
+  subscription: string,
+  data: T,
+): UnprocessedPubSubMessage => ({
   subscription: `projects/dummy-project-id-123123/subscriptions/${subscription}`,
   message: {
     // gcp message ids are 15-digit long integer strings
@@ -95,16 +100,21 @@ describe('PubSubWrapper', () => {
       clientName: string
     }
 
+    type Subscriptions = 'quote_approved__ticket_message' | 'job_cancelled__sms_pro'
+    type pubsubData = Quote | { name: string; age: number }
+
     describe('Successfully handles incoming events', () => {
       const inMemoryStateManager = new InMemoryStateManager()
-      const decodingTable: DecodingTable<Quote> = new Map()
-      const subscriptionId = 'quote_approved'
+      const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
+      const subscriptionId = 'quote_approved__ticket_message'
       const pubsubMessage = generatePubSubMessage(subscriptionId, {
         id: 12,
         clientName: 'giorgio',
       })
 
-      const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote => Promise.resolve(true))
+      const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
+        Promise.resolve(true),
+      )
 
       decodingTable.set(subscriptionId, {
         validator: (data): Quote => {
@@ -128,7 +138,9 @@ describe('PubSubWrapper', () => {
         const cachedEventAfterSubscriptionHandler = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
         )
-        expect(cachedEventAfterSubscriptionHandler?.status).toEqual(EventStatus.Completed)
+        expect(cachedEventAfterSubscriptionHandler?.status).toEqual(
+          EventStatus.Completed,
+        )
 
         expect(quoteApprovedSubscriptionHandlerSpy).toHaveBeenCalledTimes(1)
       })
@@ -143,14 +155,16 @@ describe('PubSubWrapper', () => {
     describe('Retrying failed events', () => {
       it('Tries to process a failed event multiple times', async () => {
         const inMemoryStateManager = new InMemoryStateManager()
-        const decodingTable: DecodingTable<Quote> = new Map()
-        const subscriptionId = 'quote_approved'
+        const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
+        const subscriptionId = 'quote_approved__ticket_message'
         const pubsubMessage = generatePubSubMessage(subscriptionId, {
           id: 12,
           clientName: 'giorgio',
         })
 
-        const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote => Promise.resolve(false))
+        const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
+          Promise.resolve(false),
+        )
 
         decodingTable.set(subscriptionId, {
           validator: (data): Quote => {
