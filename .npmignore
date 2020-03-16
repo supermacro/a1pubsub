@@ -8,6 +8,7 @@ docs/
 src/
 node_modules/
 tsconfig.json
+renovate.json
 
 tests/
 jest.config.js
