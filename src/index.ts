@@ -5,11 +5,34 @@ type Base64String = string
 type SubscriptionId = string
 type MessageId = string
 
-export interface PubSubMessage {
+/**
+ * This type represents a message whose data has
+ * not yet been decoded
+ *
+ * At this point, you don't yet know if the base64 encoded
+ * data conforms to the shape you expect for a particular subscription
+ *
+ * Secondly, you don't know if the subscription is recognizeable
+ */
+export interface UnprocessedPubSubMessage {
   subscription: string
   message: {
     messageId: MessageId
     data: Base64String
+  }
+}
+
+/**
+ * This type represents a valid pubsub message
+ *
+ * A valid pubsub message has a recognized subscription name, and
+ * the data conforms to a schema (and whose data came from JSON)
+ */
+export interface PubSubMessage<S extends string, T extends JSON> {
+  subscription: S
+  message: {
+    messageId: MessageId
+    data: T
   }
 }
 
@@ -38,11 +61,14 @@ export interface PubSubEvent {
 export interface StateManager {
   getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined>
   recordMessageReceived(
-    rawMessage: PubSubMessage,
+    rawMessage: UnprocessedPubSubMessage,
     subscription: SubscriptionId,
     cachedEvent?: PubSubEvent,
   ): Promise<PubSubEvent>
-  recordMessageProcessingOutcome(cachedEvent: PubSubEvent, outcome: EventStatus): Promise<void>
+  recordMessageProcessingOutcome(
+    cachedEvent: PubSubEvent,
+    outcome: EventStatus,
+  ): Promise<void>
 }
 
 export class InMemoryStateManager implements StateManager {
@@ -67,7 +93,7 @@ export class InMemoryStateManager implements StateManager {
   }
 
   async recordMessageReceived(
-    rawMessage: PubSubMessage,
+    rawMessage: UnprocessedPubSubMessage,
     subscription: SubscriptionId,
     cachedEvent?: PubSubEvent,
   ): Promise<PubSubEvent> {
@@ -114,17 +140,19 @@ export class InMemoryStateManager implements StateManager {
 
 type Validator<T> = (json: JSON) => T | undefined
 
-interface SubscriptionHandler<T extends {}> {
+interface SubscriptionHandler<T> {
   validator: Validator<T>
   handler: (data: T) => Promise<boolean>
 }
 
-export type DecodingTable<T extends {}> = Map<SubscriptionId, SubscriptionHandler<T>>
+export type DecodingTable<T> = Map<SubscriptionId, SubscriptionHandler<T>>
 
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
 // convers projects/myproject/subscriptions/mysubscription into mysubscription
-export const getSubscription = (rawSubscription: string): SubscriptionId | null => {
+export const getSubscription = (
+  rawSubscription: string,
+): SubscriptionId | null => {
   const parsed = subscriptionRe.exec(rawSubscription)
 
   if (!parsed) {
@@ -138,7 +166,7 @@ type Either<T, E> = { type: 'ok'; data: T } | { type: 'error'; error: E }
 
 // the developer could throw an exception
 // hence we call the validator in a try / catch context
-const handleValidator = <T extends {}>(
+const handleValidator = <T>(
   validator: Validator<T>,
   data: JSON,
 ): Either<T, SubscriptionError> => {
@@ -155,7 +183,7 @@ const handleValidator = <T extends {}>(
   }
 }
 
-export class PubSub<T extends {}> {
+export class PubSub<T> {
   private projectId: string
   private stateManager: StateManager
   private decoders: DecodingTable<T>
@@ -167,12 +195,14 @@ export class PubSub<T extends {}> {
   ) {
     this.projectId = projectId
 
-    this.stateManager = customStateManager ? customStateManager : new InMemoryStateManager()
+    this.stateManager = customStateManager
+      ? customStateManager
+      : new InMemoryStateManager()
 
     this.decoders = decodingTable
   }
 
-  async publish(topic: string, data: T): Promise<void> {
+  async publish<J extends {}>(topic: string, data: J): Promise<void> {
     // GCP client libraries use a strategy called Application Default Credentials (ADC)
     // to find the application's credentials.
     // more info: https://cloud.google.com/docs/authentication/production
@@ -183,14 +213,18 @@ export class PubSub<T extends {}> {
     await pubSub.topic(topic).publishJSON(data)
   }
 
-  async handlePubSubMessage(rawMsg: PubSubMessage): Promise<SubscriptionError | undefined> {
+  async handlePubSubMessage(
+    rawMsg: UnprocessedPubSubMessage,
+  ): Promise<SubscriptionError | undefined> {
     const subscription = getSubscription(rawMsg.subscription)
 
     if (!subscription) {
       return SubscriptionError.InvalidSubscription
     }
 
-    const cachedMessage = await this.stateManager.getPubSubEvent(rawMsg.message.messageId)
+    const cachedMessage = await this.stateManager.getPubSubEvent(
+      rawMsg.message.messageId,
+    )
 
     if (cachedMessage && cachedMessage.status === EventStatus.Completed) {
       // idempotency :)
@@ -211,7 +245,10 @@ export class PubSub<T extends {}> {
 
     const { validator, handler } = subscriptionHandler
 
-    const decodedMessage = handleValidator(validator, base64ToParsedJSON(rawMsg.message.data))
+    const decodedMessage = handleValidator(
+      validator,
+      base64ToParsedJSON(rawMsg.message.data),
+    )
 
     if (decodedMessage.type === 'error') {
       return decodedMessage.error
@@ -223,10 +260,16 @@ export class PubSub<T extends {}> {
     })
 
     if (succeeded) {
-      this.stateManager.recordMessageProcessingOutcome(updatedCachedMessage, EventStatus.Completed)
+      this.stateManager.recordMessageProcessingOutcome(
+        updatedCachedMessage,
+        EventStatus.Completed,
+      )
       return
     } else {
-      this.stateManager.recordMessageProcessingOutcome(updatedCachedMessage, EventStatus.Failed)
+      this.stateManager.recordMessageProcessingOutcome(
+        updatedCachedMessage,
+        EventStatus.Failed,
+      )
 
       return SubscriptionError.HandlerFailedToProcessMessage
     }
