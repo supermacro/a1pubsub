@@ -150,9 +150,7 @@ export type DecodingTable<T> = Map<SubscriptionId, SubscriptionHandler<T>>
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
 // convers projects/myproject/subscriptions/mysubscription into mysubscription
-export const getSubscription = (
-  rawSubscription: string,
-): SubscriptionId | null => {
+export const getSubscription = (rawSubscription: string): SubscriptionId | null => {
   const parsed = subscriptionRe.exec(rawSubscription)
 
   if (!parsed) {
