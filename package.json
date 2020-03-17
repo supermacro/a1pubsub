@@ -1,6 +1,6 @@
 {
   "name": "a1pubsub",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "GCP PubSub wrapper to add idempotency",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

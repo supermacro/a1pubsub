@@ -105,7 +105,7 @@ describe('PubSubWrapper', () => {
         Promise.resolve(true),
       )
 
-      const decodingTable = {
+      const subscriptionMap = {
         [subscriptionId]: {
           validator: (data: JSON): Quote => {
             return (data as unknown) as Quote
@@ -119,7 +119,7 @@ describe('PubSubWrapper', () => {
         clientName: 'giorgio',
       })
 
-      const ps = new PubSub('test-project-id', decodingTable, inMemoryStateManager)
+      const ps = new PubSub('test-project-id', subscriptionMap, inMemoryStateManager)
 
       it('On the first time the message arrives', async () => {
         const cachedEventBeforeSubscriptionHandler = await inMemoryStateManager.getPubSubEvent(
@@ -151,14 +151,13 @@ describe('PubSubWrapper', () => {
     describe('Retrying failed events', () => {
       it('Tries to process a failed event multiple times', async () => {
         const inMemoryStateManager = new InMemoryStateManager()
-        // const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
         const subscriptionId = 'quote_approved__ticket_message'
 
         const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
           Promise.resolve(false),
         )
 
-        const decodingTable = {
+        const subscriptionMap = {
           [subscriptionId]: {
             validator: (data: JSON): Quote => {
               return (data as unknown) as Quote
@@ -171,7 +170,11 @@ describe('PubSubWrapper', () => {
           clientName: 'giorgio',
         })
 
-        const ps = new PubSub('test-project-id', decodingTable, inMemoryStateManager)
+        const ps = new PubSub(
+          'test-project-id',
+          subscriptionMap,
+          inMemoryStateManager,
+        )
 
         const firstError = await ps.handlePubSubMessage(pubsubMessage)
         expect(firstError).toEqual(SubscriptionError.HandlerFailedToProcessMessage)

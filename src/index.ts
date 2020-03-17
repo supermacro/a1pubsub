@@ -144,7 +144,7 @@ export interface SubscriptionHandler<D extends {} = {}> {
 }
 
 /* eslint-disable @typescript-eslint/no-empty-interface, @typescript-eslint/no-explicit-any */
-export interface DecodingTable extends Record<string, SubscriptionHandler<any>> {}
+export interface SubscriptionMap extends Record<string, SubscriptionHandler<any>> {}
 
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
@@ -182,14 +182,14 @@ const handleValidator = <T>(
   }
 }
 
-export class PubSub<S extends string, T> {
+export class PubSub<S extends string> {
   private projectId: string
   private stateManager: StateManager
-  private decoders: DecodingTable
+  private decoders: SubscriptionMap
 
   constructor(
     projectId: string,
-    decodingTable: DecodingTable,
+    decodingTable: SubscriptionMap,
     customStateManager?: StateManager,
   ) {
     this.projectId = projectId
@@ -253,7 +253,7 @@ export class PubSub<S extends string, T> {
       return decodedMessage.error
     }
 
-    const pubSubMessage: PubSubMessage<T> = {
+    const pubSubMessage = {
       message: {
         messageId: rawMsg.message.messageId,
         data: decodedMessage.data,
