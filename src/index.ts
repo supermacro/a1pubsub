@@ -28,10 +28,8 @@ export interface UnprocessedPubSubMessage {
  * the data conforms to a schema (and whose data came from JSON)
  */
 export interface PubSubMessage<T> {
-  message: {
-    messageId: MessageId
-    data: T
-  }
+  messageId: MessageId
+  data: T
 }
 
 export enum SubscriptionError {
@@ -254,10 +252,8 @@ export class PubSub<S extends string> {
     }
 
     const pubSubMessage = {
-      message: {
-        messageId: rawMsg.message.messageId,
-        data: decodedMessage.data,
-      },
+      messageId: rawMsg.message.messageId,
+      data: decodedMessage.data,
     }
 
     const succeeded = await handler(subscription, pubSubMessage).catch(() => {
