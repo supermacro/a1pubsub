@@ -21,7 +21,6 @@ jest.mock('@google-cloud/pubsub', () => ({
 // import PubSub after we've mocked @google-cloud/pubsub
 import {
   PubSub,
-  DecodingTable,
   UnprocessedPubSubMessage,
   InMemoryStateManager,
   EventStatus,
@@ -77,9 +76,7 @@ describe('PubSubWrapper', () => {
         clientName: 'gio',
       }
 
-      const decodingTable = new Map()
-
-      const ps = new PubSub(testProjectId, decodingTable)
+      const ps = new PubSub(testProjectId, {})
 
       await ps.publish(testTopic, pubSubMessage)
 
@@ -100,27 +97,26 @@ describe('PubSubWrapper', () => {
       clientName: string
     }
 
-    type Subscriptions = 'quote_approved__ticket_message' | 'job_cancelled__sms_pro'
-    type pubsubData = Quote | { name: string; age: number }
-
     describe('Successfully handles incoming events', () => {
-      const inMemoryStateManager = new InMemoryStateManager()
-      const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
       const subscriptionId = 'quote_approved__ticket_message'
-      const pubsubMessage = generatePubSubMessage(subscriptionId, {
-        id: 12,
-        clientName: 'giorgio',
-      })
+      const inMemoryStateManager = new InMemoryStateManager()
 
       const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
         Promise.resolve(true),
       )
 
-      decodingTable.set(subscriptionId, {
-        validator: (data): Quote => {
-          return (data as unknown) as Quote
+      const decodingTable = {
+        [subscriptionId]: {
+          validator: (data: JSON): Quote => {
+            return (data as unknown) as Quote
+          },
+          handler: quoteApprovedSubscriptionHandlerSpy,
         },
-        handler: quoteApprovedSubscriptionHandlerSpy,
+      }
+
+      const pubsubMessage = generatePubSubMessage(subscriptionId, {
+        id: 12,
+        clientName: 'giorgio',
       })
 
       const ps = new PubSub('test-project-id', decodingTable, inMemoryStateManager)
@@ -155,22 +151,24 @@ describe('PubSubWrapper', () => {
     describe('Retrying failed events', () => {
       it('Tries to process a failed event multiple times', async () => {
         const inMemoryStateManager = new InMemoryStateManager()
-        const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
+        // const decodingTable: DecodingTable<Subscriptions, pubsubData> = new Map()
         const subscriptionId = 'quote_approved__ticket_message'
-        const pubsubMessage = generatePubSubMessage(subscriptionId, {
-          id: 12,
-          clientName: 'giorgio',
-        })
 
         const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
           Promise.resolve(false),
         )
 
-        decodingTable.set(subscriptionId, {
-          validator: (data): Quote => {
-            return (data as unknown) as Quote
+        const decodingTable = {
+          [subscriptionId]: {
+            validator: (data: JSON): Quote => {
+              return (data as unknown) as Quote
+            },
+            handler: quoteApprovedSubscriptionHandlerSpy,
           },
-          handler: quoteApprovedSubscriptionHandlerSpy,
+        }
+        const pubsubMessage = generatePubSubMessage(subscriptionId, {
+          id: 12,
+          clientName: 'giorgio',
         })
 
         const ps = new PubSub('test-project-id', decodingTable, inMemoryStateManager)

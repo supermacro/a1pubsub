@@ -27,8 +27,7 @@ export interface UnprocessedPubSubMessage {
  * A valid pubsub message has a recognized subscription name, and
  * the data conforms to a schema (and whose data came from JSON)
  */
-export interface PubSubMessage<S extends string, T> {
-  subscription: S
+export interface PubSubMessage<T> {
   message: {
     messageId: MessageId
     data: T
@@ -139,12 +138,13 @@ export class InMemoryStateManager implements StateManager {
 
 type Validator<T> = (json: JSON) => T | undefined
 
-interface SubscriptionHandler<S extends string, T> {
-  validator: Validator<T>
-  handler: (data: PubSubMessage<S, T>) => Promise<boolean>
+interface SubscriptionHandler<D extends {} = {}> {
+  validator: Validator<D>
+  handler: (subscription: string, data: PubSubMessage<D>) => Promise<boolean>
 }
 
-export type DecodingTable<S extends string, T> = Map<S, SubscriptionHandler<S, T>>
+/* eslint-disable @typescript-eslint/no-empty-interface, @typescript-eslint/no-explicit-any */
+export interface DecodingTable extends Record<string, SubscriptionHandler<any>> {}
 
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
@@ -185,11 +185,11 @@ const handleValidator = <T>(
 export class PubSub<S extends string, T> {
   private projectId: string
   private stateManager: StateManager
-  private decoders: DecodingTable<S, T>
+  private decoders: DecodingTable
 
   constructor(
     projectId: string,
-    decodingTable: DecodingTable<S, T>,
+    decodingTable: DecodingTable,
     customStateManager?: StateManager,
   ) {
     this.projectId = projectId
@@ -236,7 +236,7 @@ export class PubSub<S extends string, T> {
       cachedMessage,
     )
 
-    const subscriptionHandler = this.decoders.get(subscription)
+    const subscriptionHandler = this.decoders[subscription]
 
     if (!subscriptionHandler) {
       return SubscriptionError.MissingHandlerForTopic
@@ -253,15 +253,14 @@ export class PubSub<S extends string, T> {
       return decodedMessage.error
     }
 
-    const pubSubMessage: PubSubMessage<S, T> = {
-      subscription,
+    const pubSubMessage: PubSubMessage<T> = {
       message: {
         messageId: rawMsg.message.messageId,
         data: decodedMessage.data,
       },
     }
 
-    const succeeded = await handler(pubSubMessage).catch(() => {
+    const succeeded = await handler(subscription, pubSubMessage).catch(() => {
       // catching in case handler didn't catch its own errors
       return false
     })
