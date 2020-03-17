@@ -138,7 +138,7 @@ export class InMemoryStateManager implements StateManager {
 
 type Validator<T> = (json: JSON) => T | undefined
 
-interface SubscriptionHandler<D extends {} = {}> {
+export interface SubscriptionHandler<D extends {} = {}> {
   validator: Validator<D>
   handler: (subscription: string, data: PubSubMessage<D>) => Promise<boolean>
 }
@@ -148,7 +148,7 @@ export interface DecodingTable extends Record<string, SubscriptionHandler<any>> 
 
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
-// convers projects/myproject/subscriptions/mysubscription into mysubscription
+// converts projects/myproject/subscriptions/mysubscription into mysubscription
 export const getSubscription = <S extends string>(
   rawSubscription: string,
 ): S | null => {
