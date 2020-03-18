@@ -159,16 +159,14 @@ export interface SubscriptionMap extends Record<string, SubscriptionHandler<any>
 const subscriptionRe = /^projects\/[a-z-]+\d*\/subscriptions\/(.+)$/
 
 // converts projects/myproject/subscriptions/mysubscription into mysubscription
-export const getSubscription = <S extends string>(
-  rawSubscription: string,
-): S | null => {
+export const getSubscription = (rawSubscription: string): string | null => {
   const parsed = subscriptionRe.exec(rawSubscription)
 
   if (!parsed) {
     return null
   }
 
-  return parsed[1] as S
+  return parsed[1]
 }
 
 type Either<T, E> = { type: 'ok'; data: T } | { type: 'error'; error: E }
@@ -192,7 +190,7 @@ const handleValidator = <T>(
   }
 }
 
-export class PubSub<S extends string> {
+export class PubSub {
   private projectId: string
   private stateManager: StateManager
   private decoders: SubscriptionMap
@@ -225,7 +223,7 @@ export class PubSub<S extends string> {
   async handlePubSubMessage(
     rawMsg: UnprocessedPubSubMessage,
   ): Promise<SubscriptionError | undefined> {
-    const subscription = getSubscription<S>(rawMsg.subscription)
+    const subscription = getSubscription(rawMsg.subscription)
 
     if (!subscription) {
       return SubscriptionError.InvalidSubscription
