@@ -25,6 +25,7 @@ import {
   InMemoryStateManager,
   EventStatus,
   SubscriptionError,
+  HandlerResult,
 } from '../src'
 
 import { JSON } from '../src/json'
@@ -102,7 +103,7 @@ describe('PubSubWrapper', () => {
       const inMemoryStateManager = new InMemoryStateManager()
 
       const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
-        Promise.resolve(true),
+        Promise.resolve(HandlerResult.Success),
       )
 
       const subscriptionMap = {
@@ -154,7 +155,7 @@ describe('PubSubWrapper', () => {
         const subscriptionId = 'quote_approved__ticket_message'
 
         const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
-          Promise.resolve(false),
+          Promise.resolve(HandlerResult.FailedToProcess),
         )
 
         const subscriptionMap = {

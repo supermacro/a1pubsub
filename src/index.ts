@@ -72,13 +72,15 @@ export class InMemoryStateManager implements StateManager {
 
   constructor() {
     if (process.env.NODE_ENV !== 'test') {
+      const yellowColor = '\x1b[33m%s\x1b[0m'
+
       const warning = [
         '[a1pubsub]',
         'Currently using the `InMemoryStateManager`',
         'This state manager is only suitable for single-instance applications',
       ].join(' - ')
 
-      console.warn(warning)
+      console.warn(yellowColor, warning)
     }
 
     this.cache = new Map()
@@ -134,11 +136,21 @@ export class InMemoryStateManager implements StateManager {
   }
 }
 
+export enum HandlerResult {
+  FailedToProcess = 'failed_to_process',
+  Success = 'success',
+}
+
 type Validator<T> = (json: JSON) => T | undefined
+
+export type MessageHandler<D extends {}> = (
+  subscription: string,
+  data: PubSubMessage<D>,
+) => Promise<HandlerResult>
 
 export interface SubscriptionHandler<D extends {} = {}> {
   validator: Validator<D>
-  handler: (subscription: string, data: PubSubMessage<D>) => Promise<boolean>
+  handler: MessageHandler<D>
 }
 
 /* eslint-disable @typescript-eslint/no-empty-interface, @typescript-eslint/no-explicit-any */
@@ -256,11 +268,11 @@ export class PubSub<S extends string> {
       data: decodedMessage.data,
     }
 
-    const succeeded = await handler(subscription, pubSubMessage).catch(() => {
+    const handlerResult = await handler(subscription, pubSubMessage).catch(() => {
       // catching in case handler didn't catch its own errors
-      return false
+      return HandlerResult.FailedToProcess
     })
-    if (succeeded) {
+    if (handlerResult === HandlerResult.Success) {
       this.stateManager.recordMessageProcessingOutcome(
         updatedCachedMessage,
         EventStatus.Completed,
