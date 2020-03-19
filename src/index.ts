@@ -54,6 +54,16 @@ export interface PubSubEvent {
   base64_event_data: Base64String
 }
 
+/**
+ * This interface represents any state manager
+ *
+ * If you want to handle state in a more robust way than
+ * in-memory, then you would implement this interface:
+ *
+ * ```typescript
+ * class PostgresStateManager implements StateManager { ... }
+ * ```
+ */
 export interface StateManager {
   getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined>
   recordMessageReceived(
@@ -67,6 +77,11 @@ export interface StateManager {
   ): Promise<void>
 }
 
+/**
+ * Exported for testing purposes, you do not need to ever import this class
+ * as it is being used automatically if you instantiate PubSub without your own
+ * state manager (the third argument in the PubSub constructor)
+ */
 export class InMemoryStateManager implements StateManager {
   private cache: Map<MessageId, PubSubEvent>
 
@@ -136,13 +151,29 @@ export class InMemoryStateManager implements StateManager {
   }
 }
 
+/**
+ * Represents the outcome of your `handler` inside of a `SubscriptionHandler`
+ */
 export enum HandlerResult {
   FailedToProcess = 'failed_to_process',
   Success = 'success',
 }
 
+/**
+ * Takes deserialized and untyped JSON and either returns data that conforms
+ * to a schema or nothing (to represent failed validation)
+ *
+ * Under the hood, the `a1pubsub` module will catch any errors within this function,
+ * so you do not need to implement error handling.
+ */
 type Validator<T> = (json: JSON) => T | undefined
 
+/**
+ * The function that actually processes your validated pubsub event
+ *
+ * If this function returns `HandlerResult.FailedToProcess` then the retry
+ * mechanism as described in the GCP PubSub documentation will kick into place
+ */
 export type MessageHandler<D extends {}> = (
   subscription: string,
   data: PubSubMessage<D>,
@@ -209,6 +240,14 @@ export class PubSub {
     this.decoders = decodingTable
   }
 
+  /**
+   * Publish an event to a topic
+   *
+   * This method assumes that your data is serializeable to JSON
+   *
+   * @param topic the event stream in GCP PubSub
+   * @param data the data associated with this event stream
+   */
   async publish<J extends {}>(topic: string, data: J): Promise<void> {
     // GCP client libraries use a strategy called Application Default Credentials (ADC)
     // to find the application's credentials.
@@ -220,6 +259,11 @@ export class PubSub {
     await pubSub.topic(topic).publishJSON(data)
   }
 
+  /**
+   * This is the entrypoint for all pubsub subscription events
+   *
+   * @param rawMsg An unprocessed pubsub message that must first be validated
+   */
   async handlePubSubMessage(
     rawMsg: UnprocessedPubSubMessage,
   ): Promise<SubscriptionError | undefined> {

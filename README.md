@@ -10,6 +10,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 #### Table Of Contents:
 
 * [Installation](#installation)
+* [API Documentation](#api-documentation)
 * [Overview (Why & How)](#overview-why--how)
   + [Quick Summary of Google Cloud PubSub Terminology:](#quick-summary-of-google-cloud-pubsub-terminology)
   + [How Does It Work?](#how-does-it-work)
@@ -17,7 +18,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 * [Full Example of Subscription Handling With ExpressJS](#full-example-of-subscription-handling-with-expressjs)
 * [Security & Authentication](#security--authentication)
 * [Providing Alternative State Managers](#providing-alternative-state-managers)
-* [API Documentation](#api-documentation)
+
 
 
 
@@ -28,6 +29,11 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 ```
 
 This package requries running in a environment with GCP Application Default Credentials. If you authenticate on your machine using the `gcloud` cli, then you're good to go!
+
+
+## API Documentation
+
+[link](https://priceless-meitner-38fa2b.netlify.com/classes/_index_.pubsub.html)
 
 ## Overview (Why & How)
 
@@ -255,7 +261,3 @@ import { PubSub } from 'a1pubsub'
 
 new PubSub('my-project-id', decodingTable, psqlStateManager)
 ```
-
-## API Documentation
-
-[link](https://priceless-meitner-38fa2b.netlify.com/classes/_index_.pubsub.html)
