@@ -14,7 +14,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 * [Overview (Why & How)](#overview-why--how)
   + [Quick Summary of Google Cloud PubSub Terminology:](#quick-summary-of-google-cloud-pubsub-terminology)
   + [How Does It Work?](#how-does-it-work)
-    - [Decoding Table](#decoding-table)
+    - [Subscription Handlers](#subscription-handlers)
 * [Full Example of Subscription Handling With ExpressJS](#full-example-of-subscription-handling-with-expressjs)
 * [Security & Authentication](#security--authentication)
 * [Providing Alternative State Managers](#providing-alternative-state-managers)
@@ -57,7 +57,7 @@ What follows is a tldr of the actual GCP documentation located at: https://cloud
 - GCP PubSub has a limt of 10,000 topics per project ([source](https://cloud.google.com/pubsub/quotas#other_limits))
 - To create a topic:
   - [use the CLI](https://cloud.google.com/pubsub/docs/quickstart-cli#use_the_gcloud_command-line_tool)
-    - `gcloud pubsub topics create myTopic`
+    - `gcloud pubsub topics create my_topic`
   - [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#create_a_topic)
 - Topic names must be unique
 
@@ -71,8 +71,11 @@ What follows is a tldr of the actual GCP documentation located at: https://cloud
   - you have no guarantee that the data you're receiving adheres to a implied schema in your code. **You must validate your data**.
 - To create a subscription:
   - [use the CLI](https://cloud.google.com/pubsub/docs/admin#creating_subscriptions)
-    - `gcloud pubsub subscriptions create --topic myTopic mySubscriptionName`
+    - `gcloud pubsub subscriptions create --topic <topic_name> <topic_name>__<subscription_name>`
   - [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#add_a_subscription)
+  - Ensure you enable authentication for your subscription
+  - Set the endpoint appropriately
+    - For local development, I recomment you use [ngrok](https://ngrok.com/)
 - Subscription names must be unique
 
 
@@ -91,9 +94,9 @@ Let's instantiate the `PubSub` class:
 ```typescript
 const myGcpProjecId = 'setter-develop-82828'
 
-const decodingTable = justHoldYourHorsesForASecond
+const subscriptionHandlers = {} // more to come here soon
 
-const ps = new PubSub(myGcpProjecId, decodingTable)
+const ps = new PubSub(myGcpProjecId, subscriptionHandlers)
 ```
 
 When you instantiate `PubSub`, the module will try to authenticate to gcp using [Application Default Credentials](https://cloud.google.com/docs/authentication/production#finding_credentials_automatically). 
@@ -122,36 +125,22 @@ Note For Setter engineers: Create topics sparringly and with good reason. Try to
 Ok back to the code along.
 
 
-#### Decoding Table
+#### Subscription Handlers
 
-So in the above code snippet, you saw that `PubSub` was instantiated with a `decodingTable`.
+So in the above code snippet, you saw that `PubSub` was instantiated with a `subscriptionHandlers` object. The type of `subscriptionHandlers` must be `SubscriptionMap`.
 
-Before I get to explaining in plain english, here is the type definition:
+A `SubscriptionHandler` is a plain js object whose keys are strings (that represent subscription identifiers), and whose values are a object of type `SubscriptionHandler`, a `SubscriptionHandler` contains:
 
-```typescript
-type SubscriptionId = string
-
-interface SubscriptionHandler<T extends {}> {
-  validator: (json: JSON) => T
-  handler: (data: T) => Promise<boolean>
-}
-
-export type DecodingTable<T extends {}> = Map<SubscriptionId, SubscriptionHandler<T>>
-```
-
-In plain english: A decoding table is a `Map` whose keys are strings (that represent subscription identifiers), and whose values are `SubscriptionHandler`s.
-
-A `SubscriptionHandler` is an object with two keys:
 - `validator`: As I mentioned alredy, GCP pubsub data is schemaless. All you know is that the data is serializeable to json.
   - the `JSON` type is defined in `src/json.ts` and it's just a type-level definition of `JSON.parse`.
 - `handler`: The actual subscription handler, it takes your validated data and returns a promise with a boolean.
-  - Feel free to do whatever you want here, the only requirement is that you must return a promise with a boolean value.
-  - `true`: success, any subsequent messages that GCP pubsub might deliver will get ignored
+  - Feel free to do whatever you want here, the only requirement is that you must return a promise with a `HandlerResult` value.
+  - `HandlerResult.Success`: any subsequent messages that GCP pubsub might deliver will get ignored
     - **you, the developer** must send a 2XX HTTP response to google cloud pubsub so that it knows that the event has been processed
-  - `false`: failure, the event will be tracked, but our system will be expecting that same event from being delivered again on a retry
+  - `HandlerResult.FailedToProcess`: the event will be tracked, but our system will be expecting that same event from being delivered again on a retry
     - **you, the developer** must send a non 2XX HTTP response to google cloud pubsub so that it knows to retry later
 
-So if your pubsub module needs to handle 5 subscriptions, then your `DecodingTable` will have 5 keys, and 5 corresponding `SubscriptionHandler`s.
+So if your pubsub module needs to handle 5 subscriptions, then your `SubscriptionMap` will have 5 keys, and 5 corresponding `SubscriptionHandler`s.
 
 
 ## Full Example of Subscription Handling With ExpressJS
@@ -161,13 +150,43 @@ import express from 'express'
 import { PubSub } from 'a1pubsub'
 import * as Joi from '@hapi/joi'
 
+import { SubscriptionMap, HandlerResult } from 'a1pubsub'
+
+import { notifyClientViaTicketComment } from './quote-approved/zendesk-notification'
+import { quoteApprovalValidator, ApprovedQuoteData } from './quote-approved'
+
+// defining the shape of our specific SubscriptionMap
+declare module 'a1pubsub' {
+  interface SubscriptionMap {
+    quote_approved__client_ticket_comment: SubscriptionHandler<
+      ApprovedQuoteData
+    >
+
+    job_cancelled__pro_sms: SubscriptionHandler<{ example: string }>
+  }
+}
+
+/* eslint-disable @typescript-eslint/camelcase */
+export const eventHandlers: SubscriptionMap = {
+  quote_approved__client_ticket_comment: {
+    validator: quoteApprovalValidator.check,
+    handler: notifyClientViaTicketComment,
+  },
+  job_cancelled__pro_sms: {
+    validator: data => data as { example: 'testing' },
+    handler: data => {
+      console.log(data)
+      return Promise.resolve(HandlerResult.Success)
+    },
+  },
+}
+
+
 const app = express()
 const port = 3000
 
 
 const myGcpProjecId = 'setter-develop-82828'
-
-const decodingTable = new Map()
 
 const quoteApprovedSchema = {
   quote_id: Joi.number().required()
@@ -185,45 +204,10 @@ const quoteApprovedSchema = {
  *   - etc etc
  */
 
-decodingTable.set('quote_approved', {
-  validator: (data) => {
-    // using joi here ... but you can use anything you want
-    // runtypes, yum, validatorjs etc etc etc
-    const { approvedQuoteData, error } = Joi.object(quoteApprovedSchema)
-      .options({ stripUnknown: true })
-      .validate(data)
-
-    if (approvedQuoteData) {
-      return approvedQuoteData
-    } else {
-      return
-    }
-  },
-  handler: sendQuoteApprovalEmailToClient,
-})
 
 
-decodingTable.set('job_cancelled', {
-  validator: (data) => {
-    const { cancelledJobData, error } = Joi.object(jobCancelledSchema)
-      .options({ stripUnknown: true })
-      .validate(data)
 
-    if (cancelledJobData) {
-      return cancelledJobData
-    }
-  },
-  handler: refundClient
-})
-
-/*
- * pretend a whole bunch of SubscriptionId + SubscriptionHandler pairs
- * have been added to the decodingTable Map
- * to handle all the various subscriptions
- */
-
-
-const ps = new PubSub(myGcpProjecId, decodingTable)
+const ps = new PubSub(myGcpProjecId, eventHandlers)
 
 app.post('/pubsub', async (req, res) => {
   const pubsubMessage = req.body
@@ -259,5 +243,5 @@ Example:
 ```typescript
 import { PubSub } from 'a1pubsub'
 
-new PubSub('my-project-id', decodingTable, psqlStateManager)
+new PubSub('my-project-id', eventHandlers, psqlStateManager)
 ```
