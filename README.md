@@ -33,7 +33,7 @@ This package requries running in a environment with GCP Application Default Cred
 
 ## API Documentation
 
-[link](https://priceless-meitner-38fa2b.netlify.com/classes/_index_.pubsub.html)
+[link](https://setter-a1pubsub.netlify.com/classes/_index_.pubsub.html)
 
 ## Overview (Why & How)
 
