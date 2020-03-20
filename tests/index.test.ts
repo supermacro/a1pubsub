@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/camelcase, @typescript-eslint/no-non-null-assertion */
+
 const publishJSONMock = jest.fn()
 
 const topicMock = jest.fn().mockImplementation(() => {
@@ -29,6 +31,7 @@ import {
 } from '../src'
 
 import { JSON } from '../src/json'
+import { omit } from 'lodash'
 
 const sleepMs = (ms: number) =>
   new Promise(resolve => {
@@ -103,7 +106,7 @@ describe('PubSubWrapper', () => {
       const inMemoryStateManager = new InMemoryStateManager()
 
       const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
-        Promise.resolve(HandlerResult.Success),
+        Promise.resolve([HandlerResult.Success] as [HandlerResult]),
       )
 
       const subscriptionMap = {
@@ -135,11 +138,16 @@ describe('PubSubWrapper', () => {
         const cachedEventAfterSubscriptionHandler = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
         )
-        expect(cachedEventAfterSubscriptionHandler?.status).toEqual(
+        expect(cachedEventAfterSubscriptionHandler?.attempt_statuses).toEqual([
+          EventStatus.InProgress,
           EventStatus.Completed,
-        )
+        ])
 
         expect(quoteApprovedSubscriptionHandlerSpy).toHaveBeenCalledTimes(1)
+        expect(quoteApprovedSubscriptionHandlerSpy.mock.calls[0][0]).toStrictEqual({
+          ...omit(cachedEventAfterSubscriptionHandler!, ['last_failure_reason']),
+          attempt_statuses: [EventStatus.InProgress],
+        })
       })
 
       it('On subsequent invocations, the processsed event is ignored (idempotency)', async () => {
@@ -155,7 +163,10 @@ describe('PubSubWrapper', () => {
         const subscriptionId = 'quote_approved__ticket_message'
 
         const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
-          Promise.resolve(HandlerResult.FailedToProcess),
+          Promise.resolve([
+            HandlerResult.FailedToProcess,
+            'Database not accessible',
+          ] as [HandlerResult, string]),
         )
 
         const subscriptionMap = {
@@ -178,24 +189,37 @@ describe('PubSubWrapper', () => {
         )
 
         const firstError = await ps.handlePubSubMessage(pubsubMessage)
-        expect(firstError).toEqual(SubscriptionError.HandlerFailedToProcessMessage)
+        expect(firstError?.error).toEqual(
+          SubscriptionError.HandlerFailedToProcessMessage,
+        )
+        expect(firstError?.reason).toContain('Database not accessible')
 
         const firstCachedEvent = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
         )
-        expect(firstCachedEvent?.status).toEqual(EventStatus.Failed)
+        expect(firstCachedEvent?.attempt_statuses).toEqual([
+          EventStatus.InProgress,
+          EventStatus.Failed,
+        ])
 
         // need to sleep b/c sometimes last_run_at is the same for both invocations of
         // subscriptionHandler
         await sleepMs(25)
 
         const secondError = await ps.handlePubSubMessage(pubsubMessage)
-        expect(secondError).toEqual(SubscriptionError.HandlerFailedToProcessMessage)
+        expect(secondError?.error).toEqual(
+          SubscriptionError.HandlerFailedToProcessMessage,
+        )
+        expect(secondError?.reason).toContain('Database not accessible')
 
         const secondCachedEvent = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
         )
-        expect(secondCachedEvent?.status).toEqual(EventStatus.Failed)
+        expect(secondCachedEvent?.attempt_statuses).toEqual([
+          EventStatus.InProgress,
+          EventStatus.Failed,
+          EventStatus.Failed,
+        ])
 
         expect(getDate(firstCachedEvent?.last_run_at).getTime()).toBeLessThan(
           getDate(secondCachedEvent?.last_run_at).getTime(),

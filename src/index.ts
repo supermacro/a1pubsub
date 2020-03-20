@@ -35,7 +35,7 @@ export interface PubSubMessage<T> {
 export enum SubscriptionError {
   InvalidSubscription = 'invalid_subscription',
   InvalidEventData = 'invalid_event_data',
-  MissingHandlerForTopic = 'missing_handler_for_subscription',
+  MissingHandlerForSubscription = 'missing_handler_for_subscription',
   HandlerFailedToProcessMessage = 'handler_failed_to_process_message',
 }
 
@@ -49,7 +49,8 @@ export interface PubSubEvent {
   idempotency_key: MessageId
   last_run_at: Date
   created_at: Date
-  status: EventStatus
+  attempt_statuses: EventStatus[]
+  last_failure_reason?: string
   subscription: string
   base64_event_data: Base64String
 }
@@ -74,6 +75,7 @@ export interface StateManager {
   recordMessageProcessingOutcome(
     cachedEvent: PubSubEvent,
     outcome: EventStatus,
+    failureReason?: FailureReason,
   ): Promise<void>
 }
 
@@ -123,12 +125,12 @@ export class InMemoryStateManager implements StateManager {
 
       return event
     } else {
-      /* eslint-disable */
+      /* eslint-disable @typescript-eslint/camelcase */
       const event = {
         idempotency_key: rawMessage.message.messageId,
         last_run_at: today,
         created_at: today,
-        status: EventStatus.InProgress,
+        attempt_statuses: [EventStatus.InProgress],
         subscription: subscription,
         base64_event_data: rawMessage.message.data,
       }
@@ -143,11 +145,15 @@ export class InMemoryStateManager implements StateManager {
   async recordMessageProcessingOutcome(
     cachedEvent: PubSubEvent,
     outcome: EventStatus,
+    failureReason?: FailureReason,
   ): Promise<void> {
+    /* eslint-disable @typescript-eslint/camelcase */
     this.cache.set(cachedEvent.idempotency_key, {
       ...cachedEvent,
-      status: outcome,
+      attempt_statuses: cachedEvent.attempt_statuses.concat(outcome),
+      last_failure_reason: failureReason || cachedEvent.last_failure_reason,
     })
+    /* eslint-enable */
   }
 }
 
@@ -158,6 +164,8 @@ export enum HandlerResult {
   FailedToProcess = 'failed_to_process',
   Success = 'success',
 }
+
+type FailureReason = string
 
 /**
  * Takes deserialized and untyped JSON and either returns data that conforms
@@ -175,9 +183,10 @@ type Validator<T> = (json: JSON) => T | undefined
  * mechanism as described in the GCP PubSub documentation will kick into place
  */
 export type MessageHandler<D extends {}> = (
+  event: PubSubEvent,
   subscription: string,
   data: PubSubMessage<D>,
-) => Promise<HandlerResult>
+) => Promise<[HandlerResult] | [HandlerResult, FailureReason]>
 
 export interface SubscriptionHandler<D extends {} = {}> {
   validator: Validator<D>
@@ -207,7 +216,7 @@ type Either<T, E> = { type: 'ok'; data: T } | { type: 'error'; error: E }
 const handleValidator = <T>(
   validator: Validator<T>,
   data: JSON,
-): Either<T, SubscriptionError> => {
+): Either<T, SubscriptionError.InvalidEventData> => {
   try {
     const validatedData = validator(data)
 
@@ -266,20 +275,28 @@ export class PubSub {
    */
   async handlePubSubMessage(
     rawMsg: UnprocessedPubSubMessage,
-  ): Promise<SubscriptionError | undefined> {
+  ): Promise<{ error: SubscriptionError; reason?: string } | undefined> {
     const subscription = getSubscription(rawMsg.subscription)
 
     if (!subscription) {
-      return SubscriptionError.InvalidSubscription
+      return {
+        error: SubscriptionError.InvalidSubscription,
+        reason: `Subscription "${subscription}" doesn't follow the "projects/<GCP_PROJECT_NAME>/subscriptions/<SUBSCRIPTION_NAME>" pattern`,
+      }
     }
 
     const cachedMessage = await this.stateManager.getPubSubEvent(
       rawMsg.message.messageId,
     )
 
-    if (cachedMessage && cachedMessage.status === EventStatus.Completed) {
-      // idempotency :)
-      return
+    if (cachedMessage && cachedMessage.attempt_statuses.length > 0) {
+      const lastIndex = cachedMessage.attempt_statuses.length - 1
+      const mostRecentStatus = cachedMessage.attempt_statuses[lastIndex]
+
+      if (mostRecentStatus === EventStatus.Completed) {
+        // idempotency :)
+        return
+      }
     }
 
     const updatedCachedMessage = await this.stateManager.recordMessageReceived(
@@ -291,18 +308,23 @@ export class PubSub {
     const subscriptionHandler = this.decoders[subscription]
 
     if (!subscriptionHandler) {
-      return SubscriptionError.MissingHandlerForTopic
+      return {
+        error: SubscriptionError.MissingHandlerForSubscription,
+        reason: `Subscription "${subscription}" doesn't have a corresponding handler`,
+      }
     }
 
     const { validator, handler } = subscriptionHandler
 
-    const decodedMessage = handleValidator(
-      validator,
-      base64ToParsedJSON(rawMsg.message.data),
-    )
+    const untypedJsonData = base64ToParsedJSON(rawMsg.message.data)
+
+    const decodedMessage = handleValidator(validator, untypedJsonData)
 
     if (decodedMessage.type === 'error') {
-      return decodedMessage.error
+      return {
+        error: decodedMessage.error,
+        reason: `Data for subscription "${subscription}" did not pass validation. Data: ${untypedJsonData}`,
+      }
     }
 
     const pubSubMessage = {
@@ -310,10 +332,23 @@ export class PubSub {
       data: decodedMessage.data,
     }
 
-    const handlerResult = await handler(subscription, pubSubMessage).catch(() => {
+    const [handlerResult, failureReason] = await handler(
+      updatedCachedMessage,
+      subscription,
+      pubSubMessage,
+    ).catch((err: unknown) => {
       // catching in case handler didn't catch its own errors
-      return HandlerResult.FailedToProcess
+      const errorMessage = [
+        'uncaught promise rejection within handler',
+        `Error: ${err}`,
+      ].join(' - ')
+
+      return [HandlerResult.FailedToProcess, errorMessage] as [
+        HandlerResult,
+        FailureReason,
+      ]
     })
+
     if (handlerResult === HandlerResult.Success) {
       this.stateManager.recordMessageProcessingOutcome(
         updatedCachedMessage,
@@ -324,9 +359,15 @@ export class PubSub {
       this.stateManager.recordMessageProcessingOutcome(
         updatedCachedMessage,
         EventStatus.Failed,
+        failureReason,
       )
 
-      return SubscriptionError.HandlerFailedToProcessMessage
+      return {
+        error: SubscriptionError.HandlerFailedToProcessMessage,
+        reason: `Handler for subscription "${subscription}" failed to process successfully. `.concat(
+          failureReason ? `Failure reason: ${failureReason}` : '',
+        ),
+      }
     }
   }
 }
