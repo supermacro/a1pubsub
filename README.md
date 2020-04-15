@@ -11,6 +11,7 @@ This package is a wrapper for guaranteeing exactly-once handling of messages fro
 
 * [Installation](#installation)
 * [API Documentation](#api-documentation)
+* [Local Development](#local-development)
 * [Overview (Why & How)](#overview-why--how)
   + [Quick Summary of Google Cloud PubSub Terminology:](#quick-summary-of-google-cloud-pubsub-terminology)
   + [How Does It Work?](#how-does-it-work)
