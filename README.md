@@ -35,6 +35,43 @@ This package requries running in a environment with GCP Application Default Cred
 
 [link](https://setter-a1pubsub.netlify.com/classes/_index_.pubsub.html)
 
+## Local Development
+
+When developing on your machine, you will want to publish events and also receive them (once you've configured a subscription).
+
+#### Publishing PubSub Events
+
+Trigger the "flow" that contains the `.publish` API call. Example, if you want to trigger the quote approval pubsub event, then approve a quote.
+
+Whatever environment (local, staging) this event was invoked in will transmit the event over to GCP PubSub.
+
+One of three things will subsequently occur:
+
+- Error: The topic you tried publishing to does not exist
+- Success and then nothing: The topic you tried publishing to does exist, but there are no subscriptions for this topic, so it's essentially a no-op
+- Success and then delivery to subscriber(s): The topic you tried publishing to does exist, and there are subscribers that are set up as either pull or push.
+  - if they're push subscribers, then they'll recive the message in near-realtime.
+
+
+#### Receiving PubSub Events to your machine
+
+Let's suppose that you're working with push subscriptions. The question is then, how do you get GCP pubsub to stream events to your machine? 
+
+Steps:
+
+- Make sure your http server is running and has a port exposed
+- Make sure you have [ngrok](https://ngrok.com/) installed on your machine
+- Run ngrok as follows:
+
+```
+$> ~/ngrok http <PORT_NUMBER> 
+```
+
+You'll now have a url such as https://c251a9ae.ngrok.io that you can copy/paste into the GCP pubsub UI.
+
+If your HTTP server has a request handler set up at `/webhooks/pubsub` then you'll want to paste https://c251a9ae.ngrok.io/webhooks/pubsub into the GCP PubSub UI for the PubSub URL.
+
+
 ## Overview (Why & How)
 
 Setter needs one-to-many relationships between events that are published and the corresponding event handlers. i.e. We would like to emit an event such as `JOB_APPROVED`, and have various services be able to do different things with those events independently.
@@ -55,10 +92,7 @@ What follows is a tldr of the actual GCP documentation located at: https://cloud
     - The topic / event stream name
     - The associated data (must be serializeable to JSON)
 - GCP PubSub has a limt of 10,000 topics per project ([source](https://cloud.google.com/pubsub/quotas#other_limits))
-- To create a topic:
-  - [use the CLI](https://cloud.google.com/pubsub/docs/quickstart-cli#use_the_gcloud_command-line_tool)
-    - `gcloud pubsub topics create my_topic`
-  - [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#create_a_topic)
+- To create a topic, [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#create_a_topic)
 - Topic names must be unique
 
 **Subscription**:
@@ -69,10 +103,7 @@ What follows is a tldr of the actual GCP documentation located at: https://cloud
   - Read more info [here](https://cloud.google.com/pubsub/docs/subscriber)
 - The data received from a subscription is schemaless
   - you have no guarantee that the data you're receiving adheres to a implied schema in your code. **You must validate your data**.
-- To create a subscription:
-  - [use the CLI](https://cloud.google.com/pubsub/docs/admin#creating_subscriptions)
-    - `gcloud pubsub subscriptions create --topic <topic_name> <topic_name>__<subscription_name>`
-  - [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#add_a_subscription)
+- To create a subscription, [use the gcp UI](https://cloud.google.com/pubsub/docs/quickstart-console#add_a_subscription)
   - Ensure you enable authentication for your subscription
   - Set the endpoint appropriately
     - For local development, I recomment you use [ngrok](https://ngrok.com/)
