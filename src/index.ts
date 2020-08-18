@@ -89,15 +89,13 @@ export class InMemoryStateManager implements StateManager {
 
   constructor() {
     if (process.env.NODE_ENV !== 'test') {
-      const yellowColor = '\x1b[33m%s\x1b[0m'
-
       const warning = [
         '[a1pubsub]',
         'Currently using the `InMemoryStateManager`',
         'This state manager is only suitable for single-instance applications',
       ].join(' - ')
 
-      console.warn(yellowColor, warning)
+      console.info(warning)
     }
 
     this.cache = new Map()
