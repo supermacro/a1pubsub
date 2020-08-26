@@ -18,8 +18,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with:
-          token: ${{ secrets.SETTER_CI_TOKEN }}
       - name: Set up Git
         run: |
           git config --global user.email "dev@setter.com"
