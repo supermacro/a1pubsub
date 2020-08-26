@@ -3,6 +3,7 @@ import { JSON, base64ToParsedJSON } from './json'
 
 type Base64String = string
 type MessageId = string
+type MessageKey = string
 
 /**
  * This type represents a message whose data has
@@ -46,7 +47,7 @@ export enum EventStatus {
 }
 
 export interface PubSubEvent {
-  idempotency_key: MessageId
+  idempotency_key: MessageKey
   last_run_at: Date
   created_at: Date
   attempt_statuses: EventStatus[]
@@ -66,7 +67,10 @@ export interface PubSubEvent {
  * ```
  */
 export interface StateManager {
-  getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined>
+  getPubSubEvent(
+    messageId: MessageId,
+    subscription: string,
+  ): Promise<PubSubEvent | undefined>
   recordMessageReceived(
     rawMessage: UnprocessedPubSubMessage,
     subscription: string,
@@ -85,7 +89,7 @@ export interface StateManager {
  * state manager (the third argument in the PubSub constructor)
  */
 export class InMemoryStateManager implements StateManager {
-  private cache: Map<MessageId, PubSubEvent>
+  private cache: Map<MessageKey, PubSubEvent>
 
   constructor() {
     if (process.env.NODE_ENV !== 'test') {
@@ -101,8 +105,15 @@ export class InMemoryStateManager implements StateManager {
     this.cache = new Map()
   }
 
-  async getPubSubEvent(messageId: MessageId): Promise<PubSubEvent | undefined> {
-    return this.cache.get(messageId)
+  buildKey(messageId: MessageId, subscription: string): MessageKey {
+    return [messageId, '-', subscription].join('')
+  }
+
+  async getPubSubEvent(
+    messageId: MessageId,
+    subscription: string,
+  ): Promise<PubSubEvent | undefined> {
+    return this.cache.get(this.buildKey(messageId, subscription))
   }
 
   async recordMessageReceived(
@@ -125,7 +136,7 @@ export class InMemoryStateManager implements StateManager {
     } else {
       /* eslint-disable @typescript-eslint/camelcase */
       const event = {
-        idempotency_key: rawMessage.message.messageId,
+        idempotency_key: this.buildKey(rawMessage.message.messageId, subscription),
         last_run_at: today,
         created_at: today,
         attempt_statuses: [EventStatus.InProgress],
@@ -133,8 +144,7 @@ export class InMemoryStateManager implements StateManager {
         base64_event_data: rawMessage.message.data,
       }
       /* eslint-enable */
-
-      this.cache.set(rawMessage.message.messageId, event)
+      this.cache.set(event.idempotency_key, event)
 
       return event
     }
@@ -285,6 +295,7 @@ export class PubSub {
 
     const cachedMessage = await this.stateManager.getPubSubEvent(
       rawMsg.message.messageId,
+      subscription,
     )
 
     if (cachedMessage && cachedMessage.attempt_statuses.length > 0) {

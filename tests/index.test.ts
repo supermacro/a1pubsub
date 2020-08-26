@@ -34,7 +34,7 @@ import { JSON } from '../src/json'
 import { omit } from 'lodash'
 
 const sleepMs = (ms: number) =>
-  new Promise(resolve => {
+  new Promise((resolve) => {
     setTimeout(() => {
       resolve()
     }, ms)
@@ -105,7 +105,7 @@ describe('PubSubWrapper', () => {
       const subscriptionId = 'quote_approved__ticket_message'
       const inMemoryStateManager = new InMemoryStateManager()
 
-      const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
+      const quoteApprovedSubscriptionHandlerSpy = jest.fn((quote) =>
         Promise.resolve([HandlerResult.Success] as [HandlerResult]),
       )
 
@@ -128,6 +128,7 @@ describe('PubSubWrapper', () => {
       it('On the first time the message arrives', async () => {
         const cachedEventBeforeSubscriptionHandler = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
+          subscriptionId,
         )
 
         expect(cachedEventBeforeSubscriptionHandler).not.toBeDefined()
@@ -137,6 +138,7 @@ describe('PubSubWrapper', () => {
 
         const cachedEventAfterSubscriptionHandler = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
+          subscriptionId,
         )
         expect(cachedEventAfterSubscriptionHandler?.attempt_statuses).toEqual([
           EventStatus.InProgress,
@@ -162,7 +164,7 @@ describe('PubSubWrapper', () => {
         const inMemoryStateManager = new InMemoryStateManager()
         const subscriptionId = 'quote_approved__ticket_message'
 
-        const quoteApprovedSubscriptionHandlerSpy = jest.fn(quote =>
+        const quoteApprovedSubscriptionHandlerSpy = jest.fn((quote) =>
           Promise.resolve([
             HandlerResult.FailedToProcess,
             'Database not accessible',
@@ -196,6 +198,7 @@ describe('PubSubWrapper', () => {
 
         const firstCachedEvent = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
+          subscriptionId,
         )
         expect(firstCachedEvent?.attempt_statuses).toEqual([
           EventStatus.InProgress,
@@ -214,6 +217,7 @@ describe('PubSubWrapper', () => {
 
         const secondCachedEvent = await inMemoryStateManager.getPubSubEvent(
           pubsubMessage.message.messageId,
+          subscriptionId,
         )
         expect(secondCachedEvent?.attempt_statuses).toEqual([
           EventStatus.InProgress,
